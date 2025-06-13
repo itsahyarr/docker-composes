@@ -1,0 +1,17 @@
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server:8.0.0-ubuntu2204
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: b5e5495b7c04658f09d70f51522a870b4d27c3fae9b3ff9b16255988186af2de
+    volumes:
+      - mongodb_data:/data/db
+      # - ./mongod.conf:/etc/mongod.conf:ro # mongodb custom config
+    ports:
+      - "27017:27017"
+    # command: ["--config", "/etc/mongod.conf"] # if contains mongodb custom config
+
+volumes:
+  mongodb_data:
