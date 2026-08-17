@@ -1,5 +1,7 @@
 # List of Docker Compose File Config
 
-## How to Run
+## Monitoring
 
-`$ docker compose -f {filename} up -d`
+Currently for docker containers
+- setup allow for each servers
+- grafana & loki as centralized monitoring

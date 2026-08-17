@@ -1,0 +1,97 @@
+//
+// Discover all containers from the local Docker daemon.
+//
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+
+//
+// Convert useful Docker metadata into Loki labels.
+//
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  //
+  // Docker container name
+  //
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+    replacement   = "$1"
+  }
+
+  //
+  // Docker Compose project
+  //
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+
+  //
+  // Docker Compose service
+  //
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  //
+  // Docker image
+  //
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    target_label  = "image"
+  }
+}
+
+
+//
+// Read stdout/stderr logs from discovered Docker containers.
+//
+loki.source.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  targets = discovery.relabel.containers.output
+
+  labels = {
+    server      = sys.env("SERVER_NAME"),
+    environment = sys.env("ENVIRONMENT"),
+  }
+
+  forward_to = [
+    loki.process.docker.receiver,
+  ]
+}
+
+
+//
+// Optional processing stage.
+// Useful place to add JSON parsing/filtering later.
+//
+loki.process "docker" {
+
+  //
+  // Drop Alloy's own logs to prevent it from sending its own log stream.
+  //
+  stage.drop {
+    source     = "container"
+    expression = "^alloy$"
+  }
+
+  forward_to = [
+    loki.write.central.receiver,
+  ]
+}
+
+
+//
+// Send everything to central Loki over Tailscale.
+//
+loki.write "central" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+}

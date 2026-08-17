@@ -1,0 +1,30 @@
+services:
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    restart: unless-stopped
+
+    network_mode: host
+
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+
+    volumes:
+      - ./config/config.alloy:/etc/alloy/config.alloy:ro
+
+      # Allows Alloy to discover/read containers on this Docker host
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Persistent Alloy state
+      - alloy_data:/var/lib/alloy/data
+
+    environment:
+      SERVER_NAME: ${SERVER_NAME}
+      ENVIRONMENT: ${ENVIRONMENT}
+      LOKI_URL: ${LOKI_URL}
+
+volumes:
+  alloy_data:
+    name: alloy_data

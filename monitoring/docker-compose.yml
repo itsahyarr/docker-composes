@@ -1,0 +1,65 @@
+services:
+  loki:
+    image: grafana/loki:3.7.0
+    container_name: loki
+    restart: unless-stopped
+
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+
+    volumes:
+      # Loki configuration
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+
+      # Persistent Loki data
+      - loki_data:/loki
+
+    ports:
+      # Required if Alloy agents on OTHER servers
+      # connect directly to this Loki server.
+      - "100.124.55.108:3100:3100"
+
+    networks:
+      - docker_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+
+    depends_on:
+      - loki
+
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+
+    volumes:
+      # Persistent Grafana DB, users, dashboards, etc.
+      - grafana_data:/var/lib/grafana
+
+      # Grafana configuration
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+
+      # Automatically configure Loki datasource
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    networks:
+      - docker_net
+
+
+volumes:
+  loki_data:
+    name: loki_data
+
+  grafana_data:
+    name: grafana_data
+
+
+networks:
+  docker_net:
+    external: true
+    name: docker_net
