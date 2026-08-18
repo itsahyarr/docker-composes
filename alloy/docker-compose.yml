@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
 
     network_mode: host
+    privileged: true
 
     command:
       - run
@@ -20,10 +21,20 @@ services:
       # Persistent Alloy state
       - alloy_data:/var/lib/alloy/data
 
+      # Host filesystem for node metrics
+      - /:/rootfs:ro
+
+      # Required by cAdvisor
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+
     environment:
       SERVER_NAME: ${SERVER_NAME}
       ENVIRONMENT: ${ENVIRONMENT}
       LOKI_URL: ${LOKI_URL}
+      PROMETHEUS_URL: ${PROMETHEUS_URL}
 
 volumes:
   alloy_data:
