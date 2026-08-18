@@ -1,4 +1,10 @@
 //
+// ============================================================
+// DOCKER DISCOVERY
+// ============================================================
+//
+
+//
 // Discover all containers from the local Docker daemon.
 //
 discovery.docker "containers" {
@@ -21,21 +27,26 @@ discovery.relabel "containers" {
     target_label  = "container"
     replacement   = "$1"
   }
-
   //
   // Docker Compose project
   //
   rule {
-    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
-    target_label  = "compose_project"
+    source_labels = [
+      "__meta_docker_container_label_com_docker_compose_project",
+    ]
+
+    target_label = "compose_project"
   }
 
   //
   // Docker Compose service
   //
   rule {
-    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-    target_label  = "service"
+    source_labels = [
+      "__meta_docker_container_label_com_docker_compose_service",
+    ]
+
+    target_label = "service"
   }
 
   //
@@ -47,6 +58,12 @@ discovery.relabel "containers" {
   }
 }
 
+
+//
+// ============================================================
+// LOKI - DOCKER LOGS
+// ============================================================
+//
 
 //
 // Read stdout/stderr logs from discovered Docker containers.
@@ -66,15 +83,13 @@ loki.source.docker "containers" {
   ]
 }
 
-
 //
-// Optional processing stage.
-// Useful place to add JSON parsing/filtering later.
+// Process Docker logs.
 //
 loki.process "docker" {
 
   //
-  // Drop Alloy's own logs to prevent it from sending its own log stream.
+  // Drop Alloy's own logs to avoid Alloy monitoring itself.
   //
   stage.drop {
     source     = "container"
@@ -88,10 +103,155 @@ loki.process "docker" {
 
 
 //
-// Send everything to central Loki over Tailscale.
+// Send logs to central Loki.
 //
 loki.write "central" {
   endpoint {
     url = sys.env("LOKI_URL")
   }
+}
+
+//
+// ============================================================
+// PROMETHEUS REMOTE WRITE
+// ============================================================
+//
+
+//
+// Central Prometheus endpoint.
+//
+// Example:
+//
+// PROMETHEUS_URL=http://100.100.100.10:9090/api/v1/write
+//
+// The Tailscale IP of your monitoring server can be used here.
+//
+prometheus.remote_write "central" {
+  endpoint {
+    url = sys.env("PROMETHEUS_URL")
+  }
+}
+
+//
+// ============================================================
+// SERVER / NODE METRICS
+// Replaces standalone node_exporter
+// ============================================================
+//
+
+prometheus.exporter.unix "host" {
+
+  //
+  // Alloy itself runs inside Docker.
+  // These paths point to the real host filesystem.
+  //
+  procfs_path = "/rootfs/proc"
+  sysfs_path  = "/rootfs/sys"
+  rootfs_path = "/rootfs"
+}
+
+
+//
+// Add standardized labels to server metrics.
+//
+prometheus.scrape "host" {
+  targets = prometheus.exporter.unix.host.targets
+
+  scrape_interval = "15s"
+
+  forward_to = [
+    prometheus.relabel.host.receiver,
+  ]
+}
+
+prometheus.relabel "host" {
+
+  //
+  // Identify physical/virtual server.
+  //
+  rule {
+    target_label = "server"
+    replacement  = sys.env("SERVER_NAME")
+  }
+
+  //
+  // Production / staging / development.
+  //
+  rule {
+    target_label = "environment"
+    replacement  = sys.env("ENVIRONMENT")
+  }
+
+  //
+  // Makes dashboard filtering easier.
+  //
+  rule {
+    target_label = "monitor_type"
+    replacement  = "server"
+  }
+
+  forward_to = [
+    prometheus.remote_write.central.receiver,
+  ]
+}
+
+//
+// ============================================================
+// DOCKER CONTAINER METRICS
+// Replaces standalone cAdvisor
+// ============================================================
+//
+
+prometheus.exporter.cadvisor "docker" {
+
+  docker_host = "unix:///var/run/docker.sock"
+
+  //
+  // Only collect Docker containers.
+  //
+  docker_only = true
+
+  //
+  // Short internal retention is enough because Prometheus
+  // stores the historical metrics.
+  //
+  storage_duration = "5m"
+}
+
+//
+// Scrape cAdvisor metrics generated internally by Alloy.
+//
+prometheus.scrape "docker" {
+  targets = prometheus.exporter.cadvisor.docker.targets
+
+  scrape_interval = "15s"
+
+  forward_to = [
+    prometheus.relabel.docker.receiver,
+  ]
+}
+
+//
+// Add server/environment information to every Docker metric.
+//
+prometheus.relabel "docker" {
+
+  rule {
+    target_label = "server"
+    replacement  = sys.env("SERVER_NAME")
+  }
+
+  rule {
+    target_label = "environment"
+    replacement  = sys.env("ENVIRONMENT")
+  }
+
+  rule {
+    target_label = "monitor_type"
+    replacement  = "container"
+  }
+
+  forward_to = [
+    prometheus.remote_write.central.receiver,
+  ]
 }
